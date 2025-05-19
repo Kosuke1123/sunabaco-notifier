@@ -14,6 +14,7 @@ app = Flask(__name__)
 gmail_address = os.environ.get('GMAIL_ADDRESS')  # 例: 'example@gmail.com'
 gmail_app_password = os.environ.get('GMAIL_APP_PASSWORD')  # アプリパスワード
 to_address = os.environ.get('TO_ADDRESS')  # 送信先アドレス
+
 # ------------------------
 
 # ⏰ 日本時間
