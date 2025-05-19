@@ -1,26 +1,35 @@
-from flask import Flask, jsonify
-from datetime import datetime
+import os
+import time
+import threading
+from datetime import datetime, timedelta
 import pytz
-import smtplib
-from email.mime.text import MIMEText
 import requests
 from bs4 import BeautifulSoup
-import os
+import smtplib
+from email.mime.text import MIMEText
+from flask import Flask
 
+# Flaskアプリ起動（Renderで必要）
 app = Flask(__name__)
 
-# ------------------------
-# 💄 Gmail情報（Renderの環境変数に設定しておくのがおすすめ）
-gmail_address = os.environ.get('GMAIL_ADDRESS')  # 例: 'example@gmail.com'
-gmail_app_password = os.environ.get('GMAIL_APP_PASSWORD')  # アプリパスワード
-to_address = os.environ.get('TO_ADDRESS')  # 送信先アドレス
+# 環境変数からメール設定を取得
+gmail_address = os.environ.get("GMAIL_ADDRESS")
+gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
+to_address = os.environ.get("TO_ADDRESS")
 
-# ------------------------
-
-# ⏰ 日本時間
+# ⏰ 日本時間を設定
 JST = pytz.timezone('Asia/Tokyo')
 
-def fetch_event_info():
+def wait_until_next_5am():
+    now = datetime.now(JST)
+    next_5am = JST.localize(datetime(now.year, now.month, now.day, 22, 0, 0))
+    if now >= next_5am:
+        next_5am += timedelta(days=1)
+    wait_seconds = (next_5am - now).total_seconds()
+    print(f"🕐 次の5時まで {int(wait_seconds)} 秒待ちます")
+    time.sleep(wait_seconds)
+
+def fetch_and_send_event():
     try:
         url = 'https://sunabaco.com/event/'
         response = requests.get(url)
@@ -44,43 +53,43 @@ def fetch_event_info():
         else:
             event_list = []
 
+        # メール本文
         if not event_list:
             body = "現在、イベント情報は見つからなかったよ〜😢"
         else:
             body = "\n---\n".join(event_list)
 
-        return body
-
-    except Exception as e:
-        return f"⚠️ エラーが発生したよ！内容：{e}"
-
-def send_email(body):
-    try:
+        # メール作成
         msg = MIMEText(body)
         msg['Subject'] = 'SUNABACO イベント情報（ギャル通知）'
         msg['From'] = gmail_address
         msg['To'] = to_address
 
+        # メール送信
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(gmail_address, gmail_app_password)
             smtp.send_message(msg)
 
-        return "✨💌 ギャル通知送ったよ〜！💖"
+        print("✨💌 ギャル通知送ったよ〜！💖")
 
     except Exception as e:
-        return f"⚠️ メール送信でエラーが発生したよ：{e}"
+        print("⚠️ エラーが発生したよ！内容：", e)
 
+# メール送信を毎日5時に行うスレッド
+def schedule_loop():
+    while True:
+        wait_until_next_5am()
+        print("✅ 朝5時だよ！スクレイピング開始")
+        fetch_and_send_event()
+
+# Flaskのルート（アクセス確認用）
 @app.route('/')
-def home():
-    return '🎀 SUNABACO イベント通知アプリ 動作中 🎀'
+def index():
+    return '🌞 Render上で動いてます！'
 
-@app.route('/run')
-def run_fetch_and_send():
-    print("✅ 手動実行開始")
-    body = fetch_event_info()
-    result = send_email(body)
-    return jsonify({'status': result})
-
+# Flask起動時にバックグラウンドでスケジューラーを起動
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
-
+    thread = threading.Thread(target=schedule_loop)
+    thread.daemon = True
+    thread.start()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
